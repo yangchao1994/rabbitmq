@@ -1,0 +1,48 @@
+1，RabbitMQ 默认将消息顺序发送给下一个消费者，这样，每个消费者会得到相同数量的消息。
+    即轮询（round-robin）分发消息。
+2，公平分发 ：虽然上面的分配法方式也还行，但是有个问题就是：
+    比如：现在有2个消费者，所有的奇数的消息都是繁忙的，而偶数则是轻松的。
+    按照轮询的方式，奇数的任务交给了第一个消费者，所以一直在忙个不停。
+    偶数的任务交给另一个消费者，则立即完成任务，然后闲得不行。
+    而RabbitMQ则是不了解这些的。
+    这是因为当消息进入队列，RabbitMQ就会分派消息。
+    它不看消费者为应答的数目，
+    只是盲目的将消息发给轮询指定的消费者
+    为了解决这个问题，我们使用basicQos( prefetchCount = 1)方法，
+    来限制RabbitMQ只发不超过1条的消息给同一个消费者。
+    当消息处理完毕后，有了反馈，才会进行第二次发送。
+    还有一点需要注意，使用公平分发，必须关闭自动应答，改为手动应答
+3, boolean autoAck= true;//自动应答 一旦rabbitmq将消息发送给消费者就会把消息重内存中删除
+    缺点当消费者挂掉后想要再获取之前的消息是不可能的消息无法再找回比如订单号。
+    boolean autoAck= false;手动确认 在没有收到消费者回执前不会删除消息 如果有一个消费者挂掉以后
+    会将消息发送给其他消费者 注意默认是false
+    但是如果rabbitmq挂掉以后消息怎么找回 将消息持久化存入磁盘中
+    boolean durable = false;
+    channel.queueDeclare(QUEUE_NAME, durable, false, false, null);
+    将boolean durable = true;表示持久化消息队列 会将消息持久化到磁盘 但是注意只能用在第一次定义队列时才有效
+    如果之前是不持久化的队列代码改过来后是不生效的只能重新定义一个队列。
+4，轮询分发和公平分发(能者多劳)都是一个消息只能被一个消费者获得 发布订阅模式可以使每个消费者获取同一个消息
+    一个生产者多个消费者 每个消费者都绑定一个队列
+    每个队列都要绑定交换机 类似频道订阅号 队列绑定在消费者代码中 而生产者不用像之前一样绑定队列
+    生产者将消息发送给交换机，交换机在将消息发送给每个队列，消费者在从队列中获取。
+5，路由模式大体和发布订阅一样知识更加细致
+    具体原理每个消息生产时可以指定一个路由的key标志 消费者队列绑定交换机时可以用key指明获取对应key
+    的消息
+    channel.exchangeDeclare(EXCHANGE_NAME, "fanout");//发布订阅 fanout不处理
+    修改为
+    channel.exchangeDeclare(EXCHANGE_NAME, "direct");//路由要处理
+    channel.basicPublish(EXCHANGE_NAME, "", null, message.getBytes());
+    发布消息时写上消息的路由key 列如error
+    channel.basicPublish(EXCHANGE_NAME, "error", null, message.getBytes());
+    绑定交换机时
+    channel.queueBind(QUEUE_NAME,EXCHANGE_NAME,"");
+    修改为指定key
+    channel.queueBind(QUEUE_NAME,EXCHANGE_NAME,"error");
+    如果消息带上了路由key 那么只能被对应指定了key的消费者获取其他获取不到
+6, topic主题模式是对路由模式更加细化
+    主要就是消费者对消息的kye利用正则表达式来获取对应的消息而不是写死消息的key
+    例如生产者生产一个key 为computer.1的消息 消费的key为 computer.#//#和*都可以通配
+    那么只要以computer.为前缀的key的消息都会被改消费者获取
+    channel.exchangeDeclare(EXCHANGE_NAME, "");
+        修改为
+    channel.exchangeDeclare(EXCHANGE_NAME, "topic");//主题模式
